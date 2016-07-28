@@ -4,6 +4,7 @@ import com.guomi.GMCipher;
 import com.guomi.GMCipherExtend;
 import com.guomi.GMKeyBuilder;
 import com.guomi.GMKeyPair;
+import com.guomi.GMSM2KeyExchange;
 import com.guomi.GMSignature;
 import com.guomi.SM2PrivateKey;
 import com.guomi.SM2PublicKey;
@@ -24,7 +25,8 @@ public class demo extends Applet {
 	public GMKeyPair dGM_KeyPair = null;
 	public SM2PublicKey dSM2pubkey = null;
 	public SM2PrivateKey dSM2prikey = null;
-
+	public GMSM2KeyExchange dSM2KeyEx = null;
+	
 	public Cipher dGM_Cipher = null;
 	public Signature dGM_Signature = null;
 
@@ -58,6 +60,8 @@ public class demo extends Applet {
 		dSM2prikey1 = (SM2PrivateKey) GMKeyBuilder.buildKey(
 				GMKeyBuilder.TYPE_SM2_PRIVATE, GMKeyBuilder.LENGTH_SM2_FP_256,
 				true);
+		
+		dSM2KeyEx = GMSM2KeyExchange.getInstance();
 
 		dGM_Cipher = GMCipher.getInstance(GMCipher.ALG_SM2_WITH_SM3_NOPAD,
 				false);
@@ -156,7 +160,17 @@ public class demo extends Applet {
 					break;
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
-			} else {
+			} else if (0x03 == p1) {//读取GMCipherExtend信息
+				switch (p2) {
+				case (byte) 0x01:
+					dSM2KeyEx.getParam(buf, (short)0, GMSM2KeyExchange.PARAM_OTHER_TEMP_PUBLICKEY);
+					break;
+				default:
+					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+					break;
+				}
+				apdu.setOutgoingAndSend((short) 0, reslen);
+			}else {
 				ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 			}
 			break;
