@@ -1,6 +1,7 @@
 package cn.z.gm;
 
 import com.guomi.GMCipher;
+import com.guomi.GMCipherExtend;
 import com.guomi.GMKeyBuilder;
 import com.guomi.GMKeyPair;
 import com.guomi.GMSignature;
@@ -11,6 +12,8 @@ import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
+import javacard.framework.Util;
 import javacard.security.Signature;
 import javacardx.crypto.Cipher;
 
@@ -34,6 +37,9 @@ public class demo extends Applet {
 	public final byte[] debugdata_cipher = new byte[] { 0x40, 0x41, 0x42, 0x43,
 			0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e,
 			0x4f };
+	private final static byte[] ID = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
+			0x37, 0x38, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
+	private byte[] ZA;
 
 	demo() {
 		gmInstance = new GM();
@@ -57,6 +63,9 @@ public class demo extends Applet {
 				false);
 		dGM_Signature = GMSignature.getInstance(GMSignature.ALG_SM2_SM3_256,
 				false);
+
+		ZA = JCSystem.makeTransientByteArray((short) 0x20,
+				JCSystem.CLEAR_ON_RESET);
 	}
 
 	public static void install(byte[] bArray, short bOffset, byte bLength) {
@@ -120,7 +129,8 @@ public class demo extends Applet {
 				// read private key
 				switch (p2) {
 				case (byte) 0x01:
-					reslen = dSM2prikey.getS(buf, (short) 0);//获取SM2私钥数据，32 bytes;
+					reslen = dSM2prikey.getS(buf, (short) 0);// 获取SM2私钥数据，32
+																// bytes;
 					break;
 				case (byte) 0x02:
 					reslen = dSM2prikey.getA(buf, (short) 0);
@@ -211,10 +221,10 @@ public class demo extends Applet {
 				ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 			}
 			break;
-		case (byte) 0xA3://导入SM2公私玥对，并用其加解密、签名验签。
+		case (byte) 0xA3:// 导入SM2公私玥对，并用其加解密、签名验签。
 			if (0x00 == p1) {// 写入SM2公私玥对
 				reslen = apdu.setIncomingAndReceive();
-				if (0x01 == p2) {//写入公钥
+				if (0x01 == p2) {// 写入公钥
 					dSM2pubkey1.setW(buf, ISO7816.OFFSET_CDATA, (short) 0x40);
 				} else if (0x02 == p2) {// 写入获取私钥
 					dSM2prikey1.setS(buf, ISO7816.OFFSET_CDATA, (short) 0x20);
@@ -227,17 +237,51 @@ public class demo extends Applet {
 					dGM_Cipher.init(dSM2pubkey1, Cipher.MODE_ENCRYPT);
 					reslen = dGM_Cipher.doFinal(buf, ISO7816.OFFSET_CDATA,
 							reslen, buf, (short) 0);
-				} else if (0x02 == p2) {// 私钥签名
+				} else if (0x02 == p2) {// 私钥签名，没有用户ID参与
 					dGM_Signature.init(dSM2prikey1, dGM_Signature.MODE_SIGN);
 					reslen = dGM_Signature.sign(buf, ISO7816.OFFSET_CDATA,
 							reslen, buf, (short) 0);
+				} else if (0x03 == p2) {// 私钥签名,用户ID为默认值.
+					short sourcedataoff = (short) (ISO7816.OFFSET_CDATA + 1);
+					byte sourcedatalen = buf[ISO7816.OFFSET_CDATA];
+					GMCipherExtend.getZa(ID, (short) 0, (short) ID.length,
+							dSM2pubkey1, ZA, (short) 0,
+							GMCipherExtend.PARAM_FP_256);
+					Util.arrayCopy(buf, sourcedataoff, buf, (short) ZA.length,
+							(short) sourcedatalen);
+					Util.arrayCopy(ZA, (short) 0, buf, (short) 0,
+							(short) ZA.length);
+					dGM_Signature.init(dSM2prikey1, dGM_Signature.MODE_SIGN);
+					reslen = dGM_Signature
+							.sign(buf, (short) 0,
+									(short) (ZA.length + sourcedatalen), buf,
+									(short) 0);
+				} else if (0x04 == p2) {// 私钥签名,用户ID在指令数据中,userID(LV)+SourceData(LV)。
+					short useridoff = (short) (ISO7816.OFFSET_CDATA + 1);
+					byte useridlen = buf[ISO7816.OFFSET_CDATA];
+
+					short sourcedataoff = (short) (useridoff + useridlen + 1);
+					byte sourcedatalen = buf[ISO7816.OFFSET_CDATA + useridlen
+							+ 1];
+					GMCipherExtend.getZa(buf, useridoff, (short) useridlen,
+							dSM2pubkey1, ZA, (short) 0,
+							GMCipherExtend.PARAM_FP_256);
+					Util.arrayCopy(buf, sourcedataoff, buf, (short) ZA.length,
+							(short) sourcedatalen);
+					Util.arrayCopy(ZA, (short) 0, buf, (short) 0,
+							(short) ZA.length);
+					dGM_Signature.init(dSM2prikey1, dGM_Signature.MODE_SIGN);
+					reslen = dGM_Signature
+							.sign(buf, (short) 0,
+									(short) (ZA.length + sourcedatalen), buf,
+									(short) 0);
 				} else {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
 			} else if (0x02 == p1) {// 指令数据解密、验签
 				reslen = apdu.setIncomingAndReceive();
-				if (0x01 == p2) {// 公钥验签，LV+LV
+				if (0x01 == p2) {// 公钥验签，SourceData(LV)+Signature(LV)
 					dGM_Signature.init(dSM2pubkey1, dGM_Signature.MODE_VERIFY);
 					if (!dGM_Signature
 							.verify(buf,
@@ -254,6 +298,53 @@ public class demo extends Applet {
 					reslen = dGM_Cipher.doFinal(buf, ISO7816.OFFSET_CDATA,
 							reslen, buf, (short) 0);
 					apdu.setOutgoingAndSend((short) 0, reslen);
+				} else if (0x03 == p2) {// 公钥验签,用户ID为默认值,SourceData(LV)+Signature(LV)。
+					short sourcedataoff = (short) (ISO7816.OFFSET_CDATA + 1);
+					byte sourcedatalen = buf[sourcedataoff - 1];
+
+					short signatureoff = (short) (sourcedataoff + sourcedatalen + 1);
+					byte signaturelen = buf[signatureoff - 1];
+
+					GMCipherExtend.getZa(ID, (short) 0, (short) ID.length,
+							dSM2pubkey1, ZA, (short) 0,
+							GMCipherExtend.PARAM_FP_256);
+					Util.arrayCopy(buf, sourcedataoff, buf, (short) ZA.length,
+							(short) (sourcedatalen + 1 + signaturelen));
+					Util.arrayCopy(ZA, (short) 0, buf, (short) 0,
+							(short) ZA.length);
+					dGM_Signature.init(dSM2pubkey1, dGM_Signature.MODE_VERIFY);
+					if (!dGM_Signature.verify(buf, (short) 0,
+							(short) (ZA.length + sourcedatalen), buf,
+							(short) (ZA.length + sourcedatalen + 1),
+							signaturelen)) {
+						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+					}
+				} else if (0x04 == p2) {// 公钥验签,用户ID在指令中,userid(LV)+SourceData(LV)+Signature(LV)。
+					short useridoff = (short) (ISO7816.OFFSET_CDATA + 1);
+					byte useridlen = buf[useridoff - 1];
+
+					short sourcedataoff = (short) (useridoff + useridlen + 1);
+					byte sourcedatalen = buf[sourcedataoff - 1];
+
+					short signatureoff = (short) (sourcedataoff + sourcedatalen + 1);
+					byte signaturelen = buf[signatureoff - 1];
+
+					GMCipherExtend.getZa(buf, useridoff, (short) useridlen,
+							dSM2pubkey1, ZA, (short) 0,
+							GMCipherExtend.PARAM_FP_256);
+					// ZA+sourcedata+signaturelen+signature
+					Util.arrayCopy(buf, sourcedataoff, buf, (short) ZA.length,
+							(short) (signatureoff + 1 + signaturelen));
+					Util.arrayCopy(ZA, (short) 0, buf, (short) 0,
+							(short) ZA.length);
+
+					dGM_Signature.init(dSM2pubkey1, dGM_Signature.MODE_VERIFY);
+					if (!dGM_Signature.verify(buf, (short) 0,
+							(short) (ZA.length + sourcedatalen), buf,
+							(short) (ZA.length + sourcedatalen + 1),
+							signaturelen)) {
+						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+					}
 				} else {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
