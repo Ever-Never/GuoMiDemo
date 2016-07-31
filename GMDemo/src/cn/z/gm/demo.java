@@ -8,6 +8,7 @@ import com.guomi.GMSM2KeyExchange;
 import com.guomi.GMSignature;
 import com.guomi.SM2PrivateKey;
 import com.guomi.SM2PublicKey;
+import com.guomi.SM4Key;
 
 import javacard.framework.APDU;
 import javacard.framework.Applet;
@@ -26,13 +27,26 @@ public class demo extends Applet {
 	public SM2PublicKey dSM2pubkey = null;
 	public SM2PrivateKey dSM2prikey = null;
 	public GMSM2KeyExchange dSM2KeyEx = null;
-	
+	public SM4Key dSM4key = null;
+
 	public Cipher dGM_Cipher = null;
 	public Signature dGM_Signature = null;
+	public Cipher dSM4GM_Cipher_ECB = null;
+	public Cipher dSM4GM_Cipher_CBC = null;
 
 	// 导入的SM2key
 	public SM2PublicKey dSM2pubkey1 = null;
 	public SM2PrivateKey dSM2prikey1 = null;
+
+	public final byte[] DEFAULT_SM4KEY = new byte[] { 0x40, 0x41, 0x42, 0x43,
+			0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e,
+			0x4f };
+
+	private final short SM4KEY_LENGTH = (short) 0x10;
+
+	public final byte[] debugdata_SM4 = new byte[] { 0x40, 0x41, 0x42, 0x43,
+			0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e,
+			0x4f };
 
 	public final byte[] debugdata = new byte[] { 0x40, 0x41, 0x42, 0x43, 0x44,
 			0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f };
@@ -60,12 +74,17 @@ public class demo extends Applet {
 		dSM2prikey1 = (SM2PrivateKey) GMKeyBuilder.buildKey(
 				GMKeyBuilder.TYPE_SM2_PRIVATE, GMKeyBuilder.LENGTH_SM2_FP_256,
 				true);
-		
+		dSM4key = (SM4Key) GMKeyBuilder.buildKey(GMKeyBuilder.TYPE_SM4,
+				GMKeyBuilder.LENGTH_SM4, false);
 		dSM2KeyEx = GMSM2KeyExchange.getInstance();
 
 		dGM_Cipher = GMCipher.getInstance(GMCipher.ALG_SM2_WITH_SM3_NOPAD,
 				false);
 		dGM_Signature = GMSignature.getInstance(GMSignature.ALG_SM2_SM3_256,
+				false);
+		dSM4GM_Cipher_ECB = GMCipher.getInstance(GMCipher.ALG_SM4_ECB_NOPAD,
+				false);
+		dSM4GM_Cipher_CBC = GMCipher.getInstance(GMCipher.ALG_SM4_CBC_NOPAD,
 				false);
 
 		ZA = JCSystem.makeTransientByteArray((short) 0x20,
@@ -160,17 +179,18 @@ public class demo extends Applet {
 					break;
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
-			} else if (0x03 == p1) {//读取GMCipherExtend信息
+			} else if (0x03 == p1) {// 读取GMCipherExtend信息
 				switch (p2) {
 				case (byte) 0x01:
-					dSM2KeyEx.getParam(buf, (short)0, GMSM2KeyExchange.PARAM_OTHER_TEMP_PUBLICKEY);
+					dSM2KeyEx.getParam(buf, (short) 0,
+							GMSM2KeyExchange.PARAM_OTHER_TEMP_PUBLICKEY);
 					break;
 				default:
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 					break;
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
-			}else {
+			} else {
 				ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 			}
 			break;
@@ -419,6 +439,100 @@ public class demo extends Applet {
 			} else {
 				ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 			}
+			break;
+		case (byte) 0xA5:// SM4
+			if (0x00 == p1) {// 读写SM4 key
+				if (0x00 == p2) {// 写入SM4 key,默认密钥
+					dSM4key.clearKey();
+					dSM4key.setKey(DEFAULT_SM4KEY, (short) 0);
+				} else if (0x01 == p2) {// 写入SM4 key,指令参数
+					reslen = apdu.setIncomingAndReceive();
+					if (reslen != SM4KEY_LENGTH) {
+						ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+					} else {
+						dSM4key.clearKey();
+						dSM4key.setKey(buf, ISO7816.OFFSET_CDATA);
+					}
+				} else if (0x02 == p2) {// 读取SM4 key
+					reslen = (short) dSM4key.getKey(buf, (short) 0);
+					apdu.setOutgoingAndSend((short) 0, reslen);
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+				}
+			} else if (0x01 == p1) {// CBC加密
+				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_ENCRYPT);
+				if (0x00 == p2) {// 默认数据加密
+					reslen = dSM4GM_Cipher_CBC.doFinal(debugdata_SM4,
+							(short) 0, (short) debugdata_SM4.length, buf,
+							(short) 0);
+				} else if (0x01 == p2) {// 指令数据加密,必须填充0x00为16字节整数倍。
+					reslen = apdu.setIncomingAndReceive();
+					short filllen = (short) ((16 - (reslen & 0x000F)) & 0x000F);
+					if ((short) 0 != filllen) {
+						Util.arrayFillNonAtomic(buf,
+								(short) (ISO7816.OFFSET_CDATA + reslen),
+								filllen, (byte) 0x00);
+					}
+					reslen += filllen;
+					reslen = dSM4GM_Cipher_CBC.doFinal(buf,
+							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+				}
+				apdu.setOutgoingAndSend((short) 0, reslen);
+			} else if (0x02 == p1) {// CBC解密
+				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_DECRYPT);
+				if (0x01 == p2) {// 指令数据解密
+					reslen = apdu.setIncomingAndReceive();
+					if ((short) 0 == (short) (reslen & 0x0F)) {
+						reslen = dSM4GM_Cipher_CBC.doFinal(buf,
+								ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+					} else {
+						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+					}
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+				}
+				apdu.setOutgoingAndSend((short) 0, reslen);
+			} else if (0x03 == p1) {// ECB加密
+				dSM4GM_Cipher_ECB.init(dSM4key, Cipher.MODE_ENCRYPT);
+				if (0x00 == p2) {// 默认数据加密
+					reslen = dSM4GM_Cipher_CBC.doFinal(debugdata_SM4,
+							(short) 0, (short) debugdata_SM4.length, buf,
+							(short) 0);
+				} else if (0x01 == p2) {// 指令数据加密
+					reslen = apdu.setIncomingAndReceive();
+					short filllen = (short) ((16 - (reslen & 0x000F)) & 0x000F);
+					if ((short) 0 != filllen) {
+						Util.arrayFillNonAtomic(buf,
+								(short) (ISO7816.OFFSET_CDATA + reslen),
+								filllen, (byte) 0x00);
+					}
+					reslen += filllen;
+					reslen = dSM4GM_Cipher_ECB.doFinal(buf,
+							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+				}
+				apdu.setOutgoingAndSend((short) 0, reslen);
+			} else if (0x04 == p1) {// ECB解密
+				dSM4GM_Cipher_ECB.init(dSM4key, Cipher.MODE_DECRYPT);
+				if (0x01 == p2) {// 指令数据解密
+					reslen = apdu.setIncomingAndReceive();
+					if ((short) 0 == (short) (reslen & 0x0F)) {
+						reslen = dSM4GM_Cipher_ECB.doFinal(buf,
+								ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+					} else {
+						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+					}
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+				}
+				apdu.setOutgoingAndSend((short) 0, reslen);
+			} else {
+				ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+			}
+
 			break;
 		default:
 			// good practice: If you don't know the INStruction, say so:
