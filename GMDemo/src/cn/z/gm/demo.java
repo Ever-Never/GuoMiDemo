@@ -55,6 +55,8 @@ public class demo extends Applet {
 			0x4f };
 	private final static byte[] ID = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
 			0x37, 0x38, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
+	private final static byte [] IV = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+
 	private byte[] ZA;
 
 	demo() {
@@ -460,7 +462,7 @@ public class demo extends Applet {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
 			} else if (0x01 == p1) {// CBC加密
-				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_ENCRYPT);
+				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_ENCRYPT,IV, (short)0, (short)16);
 				if (0x00 == p2) {// 默认数据加密
 					reslen = dSM4GM_Cipher_CBC.doFinal(debugdata_SM4,
 							(short) 0, (short) debugdata_SM4.length, buf,
@@ -481,7 +483,7 @@ public class demo extends Applet {
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
 			} else if (0x02 == p1) {// CBC解密
-				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_DECRYPT);
+				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_DECRYPT,IV, (short)0, (short)16);
 				if (0x01 == p2) {// 指令数据解密
 					reslen = apdu.setIncomingAndReceive();
 					if ((short) 0 == (short) (reslen & 0x0F)) {
