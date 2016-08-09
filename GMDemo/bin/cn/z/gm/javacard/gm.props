@@ -1,0 +1,10 @@
+#package specification
+#Tue Aug 09 13:44:15 CST 2016
+masktools-version=3.0
+cn.z.gm-major=1
+cn.z.gm-aid=D00000000062745F67756F6D69000000
+jcop-packages=cn.z.gm
+cn.z.gm-base=internal
+cn.z.gm.demo-aid=D00000000062745F67756F6D69000001
+cn.z.gm-clazzes=cn.z.gm.GM cn.z.gm.demo
+cn.z.gm-minor=0

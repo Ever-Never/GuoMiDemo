@@ -33,6 +33,15 @@ public class demo extends Applet {
 	public Signature dGM_Signature = null;
 	public Cipher dSM4GM_Cipher_ECB = null;
 	public Cipher dSM4GM_Cipher_CBC = null;
+	
+	public Cipher dSM4GM_Cipher_ECB_PKCS5 = null;
+	public Cipher dSM4GM_Cipher_CBC_PKCS5 = null;
+	
+	public Cipher dSM4GM_Cipher_ECB_M1 = null;
+	public Cipher dSM4GM_Cipher_CBC_M1 = null;
+	
+	public Cipher dSM4GM_Cipher_ECB_M2 = null;
+	public Cipher dSM4GM_Cipher_CBC_M2 = null;
 
 	// 导入的SM2key
 	public SM2PublicKey dSM2pubkey1 = null;
@@ -87,6 +96,21 @@ public class demo extends Applet {
 		dSM4GM_Cipher_ECB = GMCipher.getInstance(GMCipher.ALG_SM4_ECB_NOPAD,
 				false);
 		dSM4GM_Cipher_CBC = GMCipher.getInstance(GMCipher.ALG_SM4_CBC_NOPAD,
+				false);
+		
+		dSM4GM_Cipher_ECB_PKCS5 = GMCipher.getInstance(GMCipher.ALG_SM4_ECB_PKCS5,
+				false);
+		dSM4GM_Cipher_CBC_PKCS5 = GMCipher.getInstance(GMCipher.ALG_SM4_CBC_PKCS5,
+				false);
+		
+		dSM4GM_Cipher_ECB_M1 = GMCipher.getInstance(GMCipher.ALG_SM4_ECB_ISO9797_M1,
+				false);
+		dSM4GM_Cipher_CBC_M1 = GMCipher.getInstance(GMCipher.ALG_SM4_CBC_ISO9797_M1,
+				false);
+		
+		dSM4GM_Cipher_ECB_M2 = GMCipher.getInstance(GMCipher.ALG_SM4_ECB_ISO9797_M2,
+				false);
+		dSM4GM_Cipher_CBC_M2 = GMCipher.getInstance(GMCipher.ALG_SM4_CBC_ISO9797_M2,
 				false);
 
 		ZA = JCSystem.makeTransientByteArray((short) 0x20,
@@ -462,12 +486,13 @@ public class demo extends Applet {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
 			} else if (0x01 == p1) {// CBC加密
-				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_ENCRYPT,IV, (short)0, (short)16);
 				if (0x00 == p2) {// 默认数据加密
+					dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_ENCRYPT,IV, (short)0, (short)16);
 					reslen = dSM4GM_Cipher_CBC.doFinal(debugdata_SM4,
 							(short) 0, (short) debugdata_SM4.length, buf,
 							(short) 0);
 				} else if (0x01 == p2) {// 指令数据加密,必须填充0x00为16字节整数倍。
+					dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_ENCRYPT,IV, (short)0, (short)16);
 					reslen = apdu.setIncomingAndReceive();
 					short filllen = (short) ((16 - (reslen & 0x000F)) & 0x000F);
 					if ((short) 0 != filllen) {
@@ -478,13 +503,28 @@ public class demo extends Applet {
 					reslen += filllen;
 					reslen = dSM4GM_Cipher_CBC.doFinal(buf,
 							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+				} else if (0x02 == p2) {// 指令数据加密,PKCS5填充
+					dSM4GM_Cipher_CBC_PKCS5.init(dSM4key, Cipher.MODE_ENCRYPT,IV, (short)0, (short)16);
+					reslen = apdu.setIncomingAndReceive();
+					reslen = dSM4GM_Cipher_CBC_PKCS5.doFinal(buf,
+							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+				}else if (0x03 == p2) {// 指令数据加密,M1填充
+					dSM4GM_Cipher_CBC_M1.init(dSM4key, Cipher.MODE_ENCRYPT,IV, (short)0, (short)16);
+					reslen = apdu.setIncomingAndReceive();
+					reslen = dSM4GM_Cipher_CBC_M1.doFinal(buf,
+							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+				}else if (0x04 == p2) {// 指令数据加密,M2填充
+					dSM4GM_Cipher_CBC_M2.init(dSM4key, Cipher.MODE_ENCRYPT,IV, (short)0, (short)16);
+					reslen = apdu.setIncomingAndReceive();
+					reslen = dSM4GM_Cipher_CBC_M2.doFinal(buf,
+							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
 				} else {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
 			} else if (0x02 == p1) {// CBC解密
-				dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_DECRYPT,IV, (short)0, (short)16);
-				if (0x01 == p2) {// 指令数据解密
+				if (0x01 == p2) {// 指令数据解密,必须填充0x00为16字节整数倍。
+					dSM4GM_Cipher_CBC.init(dSM4key, Cipher.MODE_DECRYPT,IV, (short)0, (short)16);
 					reslen = apdu.setIncomingAndReceive();
 					if ((short) 0 == (short) (reslen & 0x0F)) {
 						reslen = dSM4GM_Cipher_CBC.doFinal(buf,
@@ -492,17 +532,27 @@ public class demo extends Applet {
 					} else {
 						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
 					}
-				} else {
+				}else if (0x02 == p2) {// 指令数据解密,PKCS5填充
+					dSM4GM_Cipher_CBC_PKCS5.init(dSM4key, Cipher.MODE_DECRYPT,IV, (short)0, (short)16);
+					reslen = apdu.setIncomingAndReceive();
+					if ((short) 0 == (short) (reslen & 0x0F)) {
+						reslen = dSM4GM_Cipher_CBC_PKCS5.doFinal(buf,
+								ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+					} else {
+						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+					}
+				}  else {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
 			} else if (0x03 == p1) {// ECB加密
-				dSM4GM_Cipher_ECB.init(dSM4key, Cipher.MODE_ENCRYPT);
 				if (0x00 == p2) {// 默认数据加密
-					reslen = dSM4GM_Cipher_CBC.doFinal(debugdata_SM4,
+					dSM4GM_Cipher_ECB.init(dSM4key, Cipher.MODE_ENCRYPT);
+					reslen = dSM4GM_Cipher_ECB.doFinal(debugdata_SM4,
 							(short) 0, (short) debugdata_SM4.length, buf,
 							(short) 0);
-				} else if (0x01 == p2) {// 指令数据加密
+				} else if (0x01 == p2) {// 指令数据加密,必须填充0x00为16字节整数倍。
+					dSM4GM_Cipher_ECB.init(dSM4key, Cipher.MODE_ENCRYPT);
 					reslen = apdu.setIncomingAndReceive();
 					short filllen = (short) ((16 - (reslen & 0x000F)) & 0x000F);
 					if ((short) 0 != filllen) {
@@ -513,13 +563,18 @@ public class demo extends Applet {
 					reslen += filllen;
 					reslen = dSM4GM_Cipher_ECB.doFinal(buf,
 							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+				}else if (0x02 == p2) {// 指令数据加密,PKCS5填充。
+					dSM4GM_Cipher_ECB_PKCS5.init(dSM4key, Cipher.MODE_ENCRYPT);
+					reslen = apdu.setIncomingAndReceive();
+					reslen = dSM4GM_Cipher_ECB_PKCS5.doFinal(buf,
+							ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
 				} else {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
 			} else if (0x04 == p1) {// ECB解密
-				dSM4GM_Cipher_ECB.init(dSM4key, Cipher.MODE_DECRYPT);
 				if (0x01 == p2) {// 指令数据解密
+					dSM4GM_Cipher_ECB.init(dSM4key, Cipher.MODE_DECRYPT);
 					reslen = apdu.setIncomingAndReceive();
 					if ((short) 0 == (short) (reslen & 0x0F)) {
 						reslen = dSM4GM_Cipher_ECB.doFinal(buf,
@@ -527,14 +582,22 @@ public class demo extends Applet {
 					} else {
 						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
 					}
-				} else {
+				}else if (0x02 == p2) {// 指令数据解密,,PKCS5填充。
+					dSM4GM_Cipher_ECB_PKCS5.init(dSM4key, Cipher.MODE_DECRYPT);
+					reslen = apdu.setIncomingAndReceive();
+					if ((short) 0 == (short) (reslen & 0x0F)) {
+						reslen = dSM4GM_Cipher_ECB_PKCS5.doFinal(buf,
+								ISO7816.OFFSET_CDATA, reslen, buf, (short) 0);
+					} else {
+						ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+					}
+				}else {
 					ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 				}
 				apdu.setOutgoingAndSend((short) 0, reslen);
-			} else {
+			}else {
 				ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
 			}
-
 			break;
 		default:
 			// good practice: If you don't know the INStruction, say so:
